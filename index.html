@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fogging Machine</title>
+<style>
+  :root {
+    --bg: #eef2f4;
+    --card: #ffffff;
+    --line: #dbe3e7;
+    --ink: #101c21;
+    --muted: #62757d;
+    --track: #e3eaed;
+    --accent: #0f7f8a;
+    --accent-ink: #ffffff;
+    --ok: #1a8f5c;
+    --warn: #b7791f;
+    --bad: #c0362c;
+    --bad-bg: #fdecea;
+    --shadow: 0 1px 2px rgba(16, 28, 33, .05), 0 8px 24px rgba(16, 28, 33, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c1215;
+      --card: #141d21;
+      --line: #25333a;
+      --ink: #e8f0f2;
+      --muted: #8ba0a8;
+      --track: #223037;
+      --accent: #3fc1cc;
+      --accent-ink: #062226;
+      --ok: #4cc38a;
+      --warn: #e0a84a;
+      --bad: #f19a93;
+      --bad-bg: #2a1716;
+      --shadow: none;
+    }
+  }
+  :root { --pad: 16px; --gap: 16px; --card-pad: 16px; }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding: max(var(--pad), env(safe-area-inset-top)) max(var(--pad), env(safe-area-inset-right)) max(var(--pad), env(safe-area-inset-bottom)) max(var(--pad), env(safe-area-inset-left));
+    display: flex;
+    justify-content: center;
+  }
+  .app { width: 100%; max-width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); align-content: start; }
+  .app > header, .app > .banner, .app > footer { grid-column: 1 / -1; }
+
+  header {
+    flex-wrap: wrap;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  h1 { margin: 0; font-size: clamp(1.1rem, 1rem + .6vw, 1.4rem); font-weight: 650; letter-spacing: -0.01em; }
+  .conn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--card);
+    font-size: .82rem;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+  .conn[data-state="live"] i { background: var(--ok); }
+  .conn[data-state="offline"] i { background: var(--bad); }
+  .conn[data-state="live"] { color: var(--ink); }
+
+  .banner {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--bad-bg);
+    color: var(--bad);
+    border: 1px solid var(--bad);
+    font-size: .88rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: var(--card-pad);
+  }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; }
+  .card-title { font-size: .95rem; font-weight: 600; }
+
+  .card--gauge { display: flex; flex-direction: column; }
+  #gauge { width: 100%; height: clamp(240px, 72vw, 340px); margin-top: 4px; }
+  .gauge-error { height: clamp(240px, 72vw, 340px); display: flex; align-items: center; justify-content: center; text-align: center; color: var(--bad); font-size: .9rem; padding: 0 16px; }
+
+  .power { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .power-state { margin-top: 2px; font-size: 1.5rem; font-weight: 650; letter-spacing: -0.01em; }
+  .toggle {
+    position: relative;
+    --tw: 76px;
+    --th: 42px;
+    flex: none;
+    width: var(--tw);
+    height: var(--th);
+    padding: 0;
+    border: 0;
+    border-radius: calc(var(--th) / 2);
+    background: var(--track);
+    cursor: pointer;
+    transition: background .2s ease;
+  }
+  .toggle::after {
+    content: "";
+    position: absolute;
+    top: 4px; left: 4px;
+    width: calc(var(--th) - 8px); height: calc(var(--th) - 8px);
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
+    transition: transform .2s ease;
+  }
+  .toggle[aria-checked="true"] { background: var(--accent); }
+  .toggle[aria-checked="true"]::after { transform: translateX(calc(var(--tw) - var(--th))); }
+  .toggle:disabled { cursor: not-allowed; opacity: .5; }
+  .toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .icon-btn:hover:not(:disabled) { background: var(--track); }
+  .icon-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .icon-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .icon-btn svg { width: 18px; height: 18px; }
+
+  dialog.modal {
+    width: min(560px, calc(100% - 24px));
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--card);
+    color: var(--ink);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, .35);
+  }
+  dialog.modal::backdrop { background: rgba(8, 14, 17, .6); }
+  .modal-inner { display: flex; flex-direction: column; max-height: min(80vh, 640px); max-height: min(80dvh, 640px); padding: var(--card-pad); }
+  .modal-inner .log-wrap { flex: 1 1 auto; min-height: 0; }
+  .log-note { margin: 10px 0 0; font-size: .8rem; line-height: 1.4; color: var(--muted); }
+  .log-note.error { color: var(--bad); }
+  .log-wrap { margin-top: 12px; max-height: 340px; overflow: auto; border-top: 1px solid var(--line); }
+  .log-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .log-table th, .log-table td { padding: 10px 8px 10px 0; text-align: left; vertical-align: top; font-size: .84rem; border-bottom: 1px solid var(--line); }
+  .log-table th { position: sticky; top: 0; background: var(--card); color: var(--muted); font-weight: 600; font-size: .78rem; }
+  .log-table th:last-child, .log-table td:last-child { padding-right: 0; text-align: right; white-space: nowrap; }
+  .log-table tbody tr:last-child td { border-bottom: 0; }
+  .log-running { color: var(--accent); font-weight: 600; }
+
+  footer { margin: 0 4px; font-size: .8rem; color: var(--muted); min-height: 1.2em; }
+  [hidden] { display: none !important; }
+  @media (pointer: coarse) {
+    .icon-btn { width: 44px; height: 44px; }
+    .toggle { --tw: 80px; --th: 46px; }
+  }
+  @media (max-width: 420px) {
+    .log-table th, .log-table td { font-size: .78rem; padding-right: 6px; }
+    .power-state { font-size: 1.3rem; }
+  }
+  @media (min-width: 640px) {
+    :root { --pad: 24px; --gap: 18px; --card-pad: 20px; }
+    .app { max-width: 680px; }
+  }
+  @media (min-width: 1024px) {
+    :root { --pad: 32px; --gap: 20px; --card-pad: 24px; }
+    .app { max-width: 1040px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card--gauge { grid-row: span 2; }
+    .card--power { display: flex; flex-direction: column; justify-content: center; }
+    .card--power .power { width: 100%; }
+    .card--gauge #gauge { flex: 1 1 auto; height: auto; min-height: 340px; }
+    .card--gauge .gauge-error { flex: 1 1 auto; height: auto; min-height: 340px; }
+    .modal-inner { padding: 24px; }
+  }
+  @media (max-height: 480px) and (orientation: landscape) {
+    #gauge, .gauge-error { height: 220px; }
+    .modal-inner { max-height: calc(100dvh - 24px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .toggle, .toggle::after { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Fogging Machine</h1>
+    <span id="conn" class="conn" data-state="connecting"><i aria-hidden="true"></i><span id="conn-text">Connecting</span></span>
+  </header>
+
+  <div id="banner" class="banner" role="alert" hidden></div>
+
+  <section class="card card--gauge" aria-label="Nanomist Fluid Level">
+    <div class="card-head">
+      <span class="card-title">Nanomist Fluid Level</span>
+    </div>
+    <div id="gauge"></div>
+  </section>
+
+  <section class="card card--power" aria-label="Fogging Control">
+    <div class="power">
+      <div>
+        <div class="card-title">Fogging Control</div>
+        <div id="power-state" class="power-state">&ndash;</div>
+      </div>
+      <button id="toggle" class="toggle" role="switch" aria-checked="false" aria-label="Fogging Control" disabled></button>
+    </div>
+  </section>
+
+  <section class="card card--log" aria-label="Fogging Log">
+    <div class="card-head">
+      <span class="card-title">Fogging Log</span>
+      <button id="log-more" class="icon-btn" type="button" aria-label="View all fogging logs" title="View all fogging logs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg>
+      </button>
+    </div>
+    <p id="log-note" class="log-note error" hidden></p>
+    <div id="log-wrap" class="log-wrap">
+      <table class="log-table">
+        <thead><tr><th scope="col">ON Time</th><th scope="col">OFF Time</th><th scope="col">Fogging Duration</th></tr></thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <dialog id="log-modal" class="modal" aria-labelledby="log-modal-title">
+    <div class="modal-inner">
+      <div class="card-head">
+        <span id="log-modal-title" class="card-title">All Fogging Logs</span>
+        <button id="log-modal-close" class="icon-btn" type="button" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="log-wrap">
+        <table class="log-table">
+          <thead><tr><th scope="col">ON Time</th><th scope="col">OFF Time</th><th scope="col">Fogging Duration</th></tr></thead>
+          <tbody id="log-modal-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </dialog>
+
+  <footer id="footer" role="status" aria-live="polite">Connecting&hellip;</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var BASE = "https://blynk.cloud/external/api/";
+  var POLL_MS = 3000;
+  // Replace with your Blynk device auth token before uploading.
+  var TOKEN = "YOUR_BLYNK_AUTH_TOKEN";
+
+  var connEl = document.getElementById("conn");
+  var connText = document.getElementById("conn-text");
+  var bannerEl = document.getElementById("banner");
+  var footerEl = document.getElementById("footer");
+  var toggle = document.getElementById("toggle");
+  var powerState = document.getElementById("power-state");
+  var gaugeEl = document.getElementById("gauge");
+
+  var timer = null;
+  var polling = false;
+  var writing = false;
+  var currentV0 = null; // last value read from Blynk: 0 or 1; null = unknown
+  var currentV1 = null; // last value read from Blynk; null = unknown
+  var chart = null;
+
+  /* ---------- UI helpers ---------- */
+  function setConn(state, text) {
+    connEl.setAttribute("data-state", state);
+    connText.textContent = text;
+  }
+  function setBanner(msg) {
+    bannerEl.hidden = !msg;
+    bannerEl.textContent = msg || "";
+  }
+  function setFooter(msg) { footerEl.textContent = msg; }
+
+  /* ---------- Gauge (ECharts) ---------- */
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function gaugeOption() {
+    var m = Math.min(chart.getWidth(), chart.getHeight());
+    var arcW = Math.max(10, Math.round(m * 0.05));
+    var big = Math.max(30, Math.min(64, Math.round(m * 0.16)));
+    var small = Math.round(big * 0.48);
+    return {
+      animationDurationUpdate: 600,
+      animationEasingUpdate: "cubicOut",
+      series: [{
+        type: "gauge",
+        min: 0,
+        max: 100,
+        startAngle: 225,
+        endAngle: -45,
+        radius: "92%",
+        center: ["50%", "58%"],
+        progress: { show: true, roundCap: true, width: arcW, itemStyle: { color: css("--accent") } },
+        axisLine: { roundCap: true, lineStyle: { width: arcW, color: [[1, css("--track")]] } },
+        pointer: { show: false },
+        axisTick: { show: false },
+        splitLine: { show: false },
+        axisLabel: { show: false },
+        anchor: { show: false },
+        title: { show: false },
+        detail: {
+          offsetCenter: [0, 0],
+          valueAnimation: true,
+          formatter: function (v) {
+            if (currentV1 === null) return "{v|\u2013}";
+            return "{v|" + (Math.round(v * 10) / 10) + "}{u|%}";
+          },
+          rich: {
+            v: { fontSize: big, fontWeight: 650, color: css("--ink") },
+            u: { fontSize: small, fontWeight: 500, color: css("--muted"), padding: [Math.round(big * 0.22), 0, 0, 4] }
+          }
+        },
+        data: [{ value: currentV1 === null ? 0 : Math.max(0, Math.min(100, currentV1)) }]
+      }]
+    };
+  }
+
+  function drawGauge() { if (chart) chart.setOption(gaugeOption()); }
+
+  function initGauge() {
+    if (typeof echarts === "undefined") {
+      gaugeEl.className = "gauge-error";
+      gaugeEl.textContent = "The chart library could not be loaded from cdn.jsdelivr.net. Check your connection or content blocker, then reload.";
+      return;
+    }
+    chart = echarts.init(gaugeEl);
+    drawGauge();
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () { chart.resize(); drawGauge(); }).observe(gaugeEl);
+    } else {
+      window.addEventListener("resize", function () { chart.resize(); drawGauge(); });
+    }
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    var onTheme = function () { drawGauge(); };
+    if (mq.addEventListener) mq.addEventListener("change", onTheme);
+  }
+
+  /* ---------- State ---------- */
+  function showUnknown() {
+    currentV0 = null;
+    currentV1 = null;
+    powerState.textContent = "\u2013";
+    toggle.setAttribute("aria-checked", "false");
+    toggle.disabled = true;
+    drawGauge();
+  }
+
+  function render(data) {
+    var v0 = Number(data.v0);
+    var v1 = Number(data.v1);
+    if (data.v0 === undefined || data.v1 === undefined || isNaN(v0) || isNaN(v1)) {
+      showUnknown();
+      setConn("offline", "Offline");
+      setBanner("Blynk did not return V0 and V1. Check that both datastreams exist on this device.");
+      return;
+    }
+    currentV0 = v0 ? 1 : 0;
+    currentV1 = v1;
+    powerState.textContent = currentV0 ? "On" : "Off";
+    recordChange(currentV0);
+    toggle.setAttribute("aria-checked", currentV0 ? "true" : "false");
+    toggle.disabled = writing;
+    drawGauge();
+    setConn("live", "Live");
+    setBanner("");
+    setFooter("Updated " + new Date().toLocaleTimeString());
+  }
+
+  function describeHttpError(status, body) {
+    if (status === 400 || status === 401 || status === 403) {
+      return "Blynk rejected the token (HTTP " + status + "). Check the TOKEN value in index.html.";
+    }
+    return "Blynk returned HTTP " + status + (body ? ": " + body.slice(0, 120) : ".");
+  }
+
+  function networkMessage(err, prefix) {
+    var msg = err && err.message ? err.message : "Unknown error";
+    if (err instanceof TypeError) msg = prefix + " Details: " + msg;
+    return msg;
+  }
+
+  /* ---------- Fogging log ---------- */
+  var LOG_KEY = "fogging_log_v1";
+  var LOG_MAX = 500;
+  var logEntries = [];   // oldest first: { t: ms, s: 1|0, d?: ms on-duration }
+  var logIssue = "";     // "", "blocked" or "unreadable"
+
+  var logBodyEl = document.getElementById("log-body");
+  var logNoteEl = document.getElementById("log-note");
+  var logMoreBtn = document.getElementById("log-more");
+  var logModal = document.getElementById("log-modal");
+  var logModalBody = document.getElementById("log-modal-body");
+  var logModalClose = document.getElementById("log-modal-close");
+  var LOG_PREVIEW = 2;
+
+  // Returns the stored entries, or null when storage cannot be used (logIssue says why).
+  function loadLog() {
+    try {
+      var raw = localStorage.getItem(LOG_KEY);
+      if (raw === null) { logIssue = ""; return []; }
+      var arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) throw new SyntaxError("not an array");
+      logIssue = "";
+      return arr.filter(function (e) { return e && typeof e.t === "number" && (e.s === 0 || e.s === 1); });
+    } catch (err) {
+      logIssue = (err instanceof SyntaxError) ? "unreadable" : "blocked";
+      return null;
+    }
+  }
+
+  function saveLog() {
+    try { localStorage.setItem(LOG_KEY, JSON.stringify(logEntries)); }
+    catch (err) { logIssue = "blocked"; }
+  }
+
+  function pad(n) { return n < 10 ? "0" + n : String(n); }
+
+  function formatDuration(ms) {
+    var total = Math.round(ms / 1000);
+    var h = Math.floor(total / 3600);
+    var m = Math.floor((total % 3600) / 60);
+    var sec = total % 60;
+    if (h > 0) return h + "h " + pad(m) + "m";
+    if (m > 0) return m + "m " + pad(sec) + "s";
+    return sec + "s";
+  }
+
+  function recordChange(state) {
+    var stored = loadLog();
+    if (stored !== null) {
+      logEntries = stored;
+    } else if (logIssue === "unreadable") {
+      renderLog();
+      return;
+    }
+    var last = logEntries[logEntries.length - 1];
+    if (last && last.s === state) { renderLog(); return; }
+    var now = Date.now();
+    var entry = { t: now, s: state };
+    if (state === 0 && last && last.s === 1) entry.d = now - last.t;
+    logEntries.push(entry);
+    if (logEntries.length > LOG_MAX) logEntries.splice(0, logEntries.length - LOG_MAX);
+    saveLog();
+    renderLog();
+  }
+
+  // Pair each "on" with the next "off". Newest session first. An unpaired "off" is skipped.
+  function buildSessions() {
+    var sessions = [];
+    var open = null;
+    logEntries.forEach(function (e) {
+      if (e.s === 1) {
+        open = { on: e.t, off: null, d: null };
+        sessions.push(open);
+      } else if (open) {
+        open.off = e.t;
+        open.d = (typeof e.d === "number") ? e.d : e.t - open.on;
+        open = null;
+      }
+    });
+    return sessions.reverse();
+  }
+
+  function formatTime(ms) {
+    return new Date(ms).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  function addCell(row, text, cls) {
+    var td = document.createElement("td");
+    td.textContent = text;
+    if (cls) td.className = cls;
+    row.appendChild(td);
+  }
+
+  function fillRows(tbody, sessions) {
+    tbody.textContent = "";
+    sessions.forEach(function (sess) {
+      var tr = document.createElement("tr");
+      addCell(tr, formatTime(sess.on));
+      if (sess.off === null) {
+        addCell(tr, "Running", "log-running");
+        addCell(tr, formatDuration(Date.now() - sess.on), "log-running");
+      } else {
+        addCell(tr, formatTime(sess.off));
+        addCell(tr, formatDuration(sess.d));
+      }
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderLog() {
+    var sessions = buildSessions();
+
+    if (logIssue === "blocked") {
+      logNoteEl.textContent = "This browser is blocking storage, so the log is not being saved and will be lost when you reload.";
+      logNoteEl.className = "log-note error";
+    } else if (logIssue === "unreadable") {
+      logNoteEl.textContent = "The saved log could not be read, so new events are not being recorded. Clear this site's data in your browser settings to start a new one.";
+      logNoteEl.className = "log-note error";
+    } else {
+      logNoteEl.textContent = "";
+    }
+    logNoteEl.hidden = !logNoteEl.textContent;
+
+    fillRows(logBodyEl, sessions.slice(0, LOG_PREVIEW));
+    if (logModal.open) fillRows(logModalBody, sessions);
+  }
+
+  logMoreBtn.addEventListener("click", function () {
+    fillRows(logModalBody, buildSessions());
+    document.body.style.overflow = "hidden";
+    logModal.showModal();
+  });
+  logModalClose.addEventListener("click", function () { logModal.close(); });
+  logModal.addEventListener("click", function (e) {
+    if (e.target === logModal) logModal.close(); // click on the backdrop
+  });
+  logModal.addEventListener("close", function () {
+    document.body.style.overflow = "";
+    logMoreBtn.focus();
+  });
+
+  /* ---------- Polling ---------- */
+  function schedule() {
+    clearTimeout(timer);
+    timer = setTimeout(poll, POLL_MS);
+  }
+
+  function poll() {
+    if (polling) return;
+    if (document.hidden) { schedule(); return; }
+    polling = true;
+    fetch(BASE + "getAll?token=" + encodeURIComponent(TOKEN), { cache: "no-store" })
+      .then(function (res) {
+        if (!res.ok) {
+          return res.text().then(function (t) { throw new Error(describeHttpError(res.status, t)); });
+        }
+        return res.json();
+      })
+      .then(render)
+      .catch(function (err) {
+        showUnknown();
+        setConn("offline", "Offline");
+        setBanner(networkMessage(err, "Could not reach Blynk. Check your connection, or the request was blocked (CORS)."));
+        setFooter("");
+      })
+      .then(function () {
+        polling = false;
+        schedule();
+      });
+  }
+
+  /* ---------- Toggle V0 ---------- */
+  toggle.addEventListener("click", function () {
+    if (currentV0 === null || writing) return;
+    var next = currentV0 ? 0 : 1;
+    writing = true;
+    toggle.disabled = true;
+    setFooter("Sending\u2026");
+    fetch(BASE + "update?token=" + encodeURIComponent(TOKEN) + "&v0=" + next, { cache: "no-store" })
+      .then(function (res) {
+        if (!res.ok) {
+          return res.text().then(function (t) { throw new Error(describeHttpError(res.status, t)); });
+        }
+        setFooter("Sent. Waiting for the next update.");
+      })
+      .catch(function (err) {
+        setBanner(networkMessage(err, "Could not reach Blynk. The change was not sent."));
+        setFooter("");
+      })
+      .then(function () {
+        writing = false;
+        toggle.disabled = currentV0 === null;
+      });
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) { clearTimeout(timer); poll(); }
+  });
+
+  var initialLog = loadLog();
+  if (initialLog !== null) logEntries = initialLog;
+  renderLog();
+  initGauge();
+  showUnknown();
+  poll();
+})();
+</script>
+</body>
+</html>
