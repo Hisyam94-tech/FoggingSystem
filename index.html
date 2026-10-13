@@ -51,7 +51,7 @@
     -webkit-font-smoothing: antialiased;
   }
   .app { max-width: var(--maxw); margin: 0 auto; padding: var(--pad) max(var(--pad), env(safe-area-inset-right)) max(var(--pad), env(safe-area-inset-bottom)) max(var(--pad), env(safe-area-inset-left)); box-sizing: content-box; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); align-content: start; }
-  .app > .banner, .app > footer { grid-column: 1 / -1; }
+  .app > .banner { grid-column: 1 / -1; }
 
   .site {
     position: sticky;
@@ -180,8 +180,8 @@
   .log-table tbody tr:last-child td { border-bottom: 0; }
   .log-running { color: var(--accent); font-weight: 600; }
 
-  footer { margin: 0 4px; font-size: .8rem; color: var(--muted); }
-  footer:empty { display: none; }
+  .control-status { margin: 12px 0 0; font-size: .8rem; color: var(--muted); }
+  .control-status:empty { display: none; }
   [hidden] { display: none !important; }
   @media (pointer: coarse) {
     .icon-btn { width: 44px; height: 44px; }
@@ -259,6 +259,7 @@
       </div>
       <button id="toggle" class="toggle" role="switch" aria-checked="false" aria-label="Fogging Control" disabled></button>
     </div>
+    <div id="footer" class="control-status" role="status" aria-live="polite"></div>
   </section>
 
   <section class="card card--log" aria-label="Fogging Log">
@@ -294,18 +295,18 @@
     </div>
   </dialog>
 
-  <footer id="footer" role="status" aria-live="polite"></footer>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<script src="vendor/echarts.min.js"></script>
 <script>
 (function () {
   "use strict";
 
   var BASE = "https://blynk.cloud/external/api/";
-  var POLL_MS = 3000;
+  var POLL_MS = 1000;
   var BLYNK_TEMPLATE_ID = "TMPL6rEvCPmuQ";
   var BLYNK_TEMPLATE_NAME = "Fogging Machine";
+  var TOKEN = "DsRVFkdD6vSW9-nGrH3A8FT9xNg6FY1d"; // Set this to the Blynk Device Auth Token from Device Info.
   // Supabase project URL and anon (public) key. Never put the database password here.
   var SUPABASE_URL = "https://yncgdbxwulhacctcjzik.supabase.co";
   var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InluY2dkYnh3dWxoYWNjdGNqemlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3NjA0NDcsImV4cCI6MjEwNzMzNjQ0N30.fwOLFBfTs_hYOp00LszMzOTx8W97rNFH4pBfvrwiiTQ";
@@ -341,12 +342,19 @@
 
   /* ---------- Gauge (ECharts) ---------- */
   function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function gaugeColor(value) {
+    if (value <= 20) return "#c0362c";
+    if (value <= 50) return "#d97904";
+    if (value <= 70) return "#d9b504";
+    return "#1a8f5c";
+  }
 
   function gaugeOption() {
     var m = Math.min(chart.getWidth(), chart.getHeight());
     var arcW = Math.max(10, Math.round(m * 0.05));
     var big = Math.max(30, Math.min(64, Math.round(m * 0.16)));
     var small = Math.round(big * 0.48);
+    var value = currentV1 === null ? 0 : Math.max(0, Math.min(100, currentV1));
     return {
       animationDurationUpdate: 600,
       animationEasingUpdate: "cubicOut",
@@ -358,7 +366,7 @@
         endAngle: -45,
         radius: "92%",
         center: ["50%", "58%"],
-        progress: { show: true, roundCap: true, width: arcW, itemStyle: { color: css("--accent") } },
+        progress: { show: true, roundCap: true, width: arcW, itemStyle: { color: gaugeColor(value) } },
         axisLine: { roundCap: true, lineStyle: { width: arcW, color: [[1, css("--track")]] } },
         pointer: { show: false },
         axisTick: { show: false },
@@ -378,7 +386,7 @@
             u: { fontSize: small, fontWeight: 500, color: css("--muted"), padding: [Math.round(big * 0.22), 0, 0, 4] }
           }
         },
-        data: [{ value: currentV1 === null ? 0 : Math.max(0, Math.min(100, currentV1)) }]
+        data: [{ value: value }]
       }]
     };
   }
@@ -388,7 +396,7 @@
   function initGauge() {
     if (typeof echarts === "undefined") {
       gaugeEl.className = "gauge-error";
-      gaugeEl.textContent = "The chart library could not be loaded from cdn.jsdelivr.net. Check your connection or content blocker, then reload.";
+      gaugeEl.textContent = "The chart library could not be loaded from vendor/echarts.min.js. Check that the local file exists, then reload.";
       return;
     }
     chart = echarts.init(gaugeEl);
@@ -625,6 +633,14 @@
   function poll() {
     if (polling) return;
     if (document.hidden) { schedule(); return; }
+    if (!TOKEN) {
+      showUnknown();
+      setConn("offline", "Offline");
+      setBanner("Set TOKEN in index.html to the Blynk Device Auth Token from Device Info.");
+      setUpdated("");
+      schedule();
+      return;
+    }
     polling = true;
     fetch(BASE + "getAll?token=" + encodeURIComponent(TOKEN), { cache: "no-store" })
       .then(function (res) {
