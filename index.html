@@ -59,9 +59,11 @@
   }
   .signal { display: block; width: 30px; height: 26px; margin-left: auto; flex: none; }
   .signal .b { fill: var(--muted); opacity: .28; transition: fill .2s ease, opacity .2s ease; }
-  .signal[data-state="live"] .b { fill: var(--ok); opacity: 1; }
-  .signal[data-state="connecting"] .b:nth-of-type(-n+2) { fill: var(--warn); opacity: 1; }
-  .signal[data-state="offline"] .b:nth-of-type(1) { fill: var(--bad); opacity: 1; }
+  .signal .b.is-lit { fill: var(--ok); opacity: 1; }
+  .connection { display: grid; justify-items: end; gap: 4px; flex: none; }
+  .signal-value { font-size: .7rem; color: var(--muted); }
+  .updated[data-state="offline"]::before { background: var(--bad); }
+  .updated[data-state="unknown"]::before { background: var(--warn); }
   .brand-text { min-width: 0; }
   .updated { margin-top: 2px; min-height: 1.1em; font-size: .86rem; color: var(--muted); font-variant-numeric: tabular-nums; }
   .updated::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--accent); vertical-align: 1px; }
@@ -168,6 +170,7 @@
   .icon-btn:disabled { opacity: .45; cursor: not-allowed; }
   .icon-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .icon-btn svg { width: 18px; height: 18px; }
+  .refresh-btn { width: auto; min-height: 36px; padding: 0 12px; gap: 6px; border-radius: 18px; font: inherit; font-size: .8rem; flex: none; }
 
   .card--log {
     display: grid;
@@ -249,6 +252,7 @@
         <div id="updated" class="updated"></div>
       </div>
     </div>
+    <div class="connection">
     <svg id="conn" class="signal" data-state="connecting" viewBox="0 0 30 26" role="img" aria-label="Connecting">
       <title>Connecting</title>
       <rect class="b" x="1" y="16" width="5" height="9" rx="1.5"/>
@@ -256,6 +260,8 @@
       <rect class="b" x="17" y="6" width="5" height="19" rx="1.5"/>
       <rect class="b" x="25" y="1" width="5" height="24" rx="1.5"/>
     </svg>
+    <span id="signal-value" class="signal-value">Signal unavailable</span>
+    </div>
   </div>
 </header>
 
@@ -269,8 +275,13 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5s6 6.4 6 11a6 6 0 0 1-12 0c0-4.6 6-11 6-11Z"/></svg>
         Nanomist fluid
       </span>
+      <button id="fluid-refresh" class="icon-btn refresh-btn" type="button" aria-label="Refresh fluid level">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-2L20 8M4 16l2.3 3A7 7 0 0 0 17.9 17"/></svg>
+        <span id="fluid-refresh-label" role="status" aria-live="polite">Refresh</span>
+      </button>
     </div>
     <div id="gauge"></div>
+    <div id="fluid-refresh-status" class="control-status" role="status" aria-live="polite"></div>
   </section>
 
   <section class="card card--power" aria-label="Fogging Control">
@@ -339,6 +350,8 @@
 
   var BASE = "https://blynk.cloud/external/api/";
   var POLL_MS = 1000;
+  // V2 contains ESP32 Wi-Fi RSSI in dBm, published every 10 seconds.
+  var RSSI_PIN = "v2";
   var BLYNK_TEMPLATE_ID = "TMPL6rEvCPmuQ";
   var BLYNK_TEMPLATE_NAME = "Fogging Machine";
   var TOKEN = "DsRVFkdD6vSW9-nGrH3A8FT9xNg6FY1d"; // Set this to the Blynk Device Auth Token from Device Info.
@@ -354,6 +367,9 @@
   var toggle = document.getElementById("toggle");
   var powerState = document.getElementById("power-state");
   var gaugeEl = document.getElementById("gauge");
+  var fluidRefresh = document.getElementById("fluid-refresh");
+  var fluidRefreshLabel = document.getElementById("fluid-refresh-label");
+  var manualRefreshing = false;
   var powerCard = document.querySelector(".card--power");
   var bottomState = document.getElementById("bottom-state");
 
@@ -369,6 +385,21 @@
     connEl.setAttribute("data-state", state);
     connEl.setAttribute("aria-label", text);
     connTitle.textContent = text;
+    updatedEl.setAttribute("data-state", state);
+    if (state !== "live") setSignal(null);
+  }
+  function setSignal(raw) {
+    var rssi = raw === null || raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
+    var valid = Number.isFinite(rssi) && rssi < 0 && rssi >= -127;
+    var bars = !valid ? 0 : rssi >= -55 ? 4 : rssi >= -67 ? 3 : rssi >= -75 ? 2 : 1;
+    connEl.querySelectorAll(".b").forEach(function (bar, index) {
+      bar.classList.toggle("is-lit", index < bars);
+    });
+    var label = valid ? rssi + " dBm" : "Signal unavailable";
+    document.getElementById("signal-value").textContent = label;
+    var description = (connEl.dataset.state === "live" ? "Online" : connEl.dataset.state) + ", " + label;
+    connEl.setAttribute("aria-label", description);
+    connTitle.textContent = description;
   }
   function setBanner(msg) {
     bannerEl.hidden = !msg;
@@ -504,7 +535,6 @@
     var v1 = Number(data.v1);
     if (data.v0 === undefined || data.v1 === undefined || isNaN(v0) || isNaN(v1)) {
       showUnknown();
-      setConn("offline", "Offline");
       setBanner("Blynk did not return V0 and V1. Check that both datastreams exist on this device.");
       return;
     }
@@ -515,7 +545,6 @@
     toggle.setAttribute("aria-checked", currentV0 ? "true" : "false");
     toggle.disabled = writing;
     drawGauge();
-    setConn("live", "Live");
     setBanner("");
     setUpdated("Online \u00b7 " + new Date().toLocaleTimeString([], { hour12: false }));
     if (!writing) setFooter(currentV0 ? currentRunText() : "");
@@ -730,6 +759,59 @@
   });
 
   /* ---------- Polling ---------- */
+  fluidRefresh.addEventListener("click", async function () {
+    if (manualRefreshing) return;
+    manualRefreshing = true;
+    var status = document.getElementById("fluid-refresh-status");
+    fluidRefresh.disabled = true;
+    fluidRefresh.setAttribute("aria-busy", "true");
+    fluidRefreshLabel.textContent = "Refreshing\u2026";
+    status.textContent = "Requesting a fresh sensor reading\u2026";
+    async function request(path) {
+      var res = await fetch(BASE + path + "token=" + encodeURIComponent(TOKEN), {
+        cache: "no-store", signal: AbortSignal.timeout(5000)
+      });
+      if (!res.ok) throw new Error(describeHttpError(res.status, await res.text()));
+      return res;
+    }
+    try {
+      var online = await (await request("isHardwareConnected?")).json();
+      if (online !== true) throw new Error("The machine is offline.");
+      var initial = await (await request("getAll?")).json();
+      if (initial.v3 === undefined) throw new Error("Create the V3 refresh datastream in Blynk and upload the updated ESP32 sketch.");
+      await request("update?v3=1&");
+      var deadline = Date.now() + 15000;
+      var complete = false;
+      while (Date.now() < deadline) {
+        await new Promise(function (resolve) { setTimeout(resolve, 500); });
+        var data = await (await request("getAll?")).json();
+        if (Number(data.v3) === -1) throw new Error("The fluid sensor returned missing or unstable echoes. Check the sensor and retry.");
+        if (Number(data.v3) === 0) {
+          var value = Number(data.v1);
+          if (data.v1 === undefined || !Number.isFinite(value)) throw new Error("No valid fluid reading was returned.");
+          currentV1 = value;
+          drawGauge();
+          complete = true;
+          status.textContent = "Sensor refreshed at " + new Date().toLocaleTimeString([], { hour12: false });
+          break;
+        }
+      }
+      if (!complete) throw new Error("No response from the ESP32. Upload the updated sketch and retry.");
+    } catch (err) {
+      status.textContent = "Refresh failed: " + err.message;
+    } finally {
+      manualRefreshing = false;
+      finishFluidRefresh();
+    }
+  });
+
+  function finishFluidRefresh() {
+    if (manualRefreshing) return;
+    fluidRefresh.disabled = false;
+    fluidRefresh.removeAttribute("aria-busy");
+    fluidRefreshLabel.textContent = "Refresh";
+  }
+
   function schedule() {
     clearTimeout(timer);
     timer = setTimeout(poll, POLL_MS);
@@ -737,32 +819,54 @@
 
   function poll() {
     if (polling) return;
-    if (document.hidden) { schedule(); return; }
+    if (document.hidden) { finishFluidRefresh(); schedule(); return; }
     if (!TOKEN) {
       showUnknown();
       setConn("offline", "Offline");
       setBanner("Set TOKEN in index.html to the Blynk Device Auth Token from Device Info.");
       setUpdated("");
+      finishFluidRefresh();
       schedule();
       return;
     }
     polling = true;
-    fetch(BASE + "getAll?token=" + encodeURIComponent(TOKEN), { cache: "no-store" })
+    function readDevice(path) {
+      return fetch(BASE + path + "?token=" + encodeURIComponent(TOKEN), { cache: "no-store", signal: AbortSignal.timeout(10000) })
       .then(function (res) {
         if (!res.ok) {
           return res.text().then(function (t) { throw new Error(describeHttpError(res.status, t)); });
         }
         return res.json();
+      });
+    }
+    readDevice("isHardwareConnected")
+      .then(function (online) {
+        if (online !== true && online !== false) throw new Error("Invalid device connection status.");
+        setConn(online ? "live" : "offline", online ? "Online" : "Offline");
+        if (!online) {
+          showUnknown();
+          powerState.textContent = "Unknown";
+          bottomState.textContent = "Offline";
+          setUpdated("Offline");
+          setBanner("The machine is disconnected from Blynk.");
+          return;
+        }
+        return readDevice("getAll").then(function (data) {
+          setSignal(RSSI_PIN ? data[RSSI_PIN] : null);
+          render(data);
+        });
       })
-      .then(render)
       .catch(function (err) {
         showUnknown();
-        setConn("offline", "Offline");
+        setConn("unknown", "Connection unknown");
+        powerState.textContent = "Unknown";
+        bottomState.textContent = "Connection unknown";
         setBanner(networkMessage(err, "Could not reach Blynk. Check your connection, or the request was blocked (CORS)."));
-        setUpdated("");
+        setUpdated("Connection unknown");
       })
       .then(function () {
         polling = false;
+        finishFluidRefresh();
         schedule();
       });
   }
