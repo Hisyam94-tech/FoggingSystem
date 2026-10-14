@@ -170,7 +170,13 @@
   .icon-btn:disabled { opacity: .45; cursor: not-allowed; }
   .icon-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .icon-btn svg { width: 18px; height: 18px; }
-  .refresh-btn { width: auto; min-height: 36px; padding: 0 12px; gap: 6px; border-radius: 18px; font: inherit; font-size: .8rem; flex: none; }
+  .refresh-btn { flex: none; }
+  .refresh-btn[aria-busy="true"] svg { animation: refresh-spin 1s linear infinite; }
+  @keyframes refresh-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .refresh-btn[aria-busy="true"] svg { animation: none; }
+  }
+  #fluid-refresh-status:empty { display: none; }
 
   .card--log {
     display: grid;
@@ -275,9 +281,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5s6 6.4 6 11a6 6 0 0 1-12 0c0-4.6 6-11 6-11Z"/></svg>
         Nanomist fluid
       </span>
-      <button id="fluid-refresh" class="icon-btn refresh-btn" type="button" aria-label="Refresh fluid level">
+      <button id="fluid-refresh" class="icon-btn refresh-btn" type="button" aria-label="Refresh fluid level" title="Refresh fluid level">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-2L20 8M4 16l2.3 3A7 7 0 0 0 17.9 17"/></svg>
-        <span id="fluid-refresh-label" role="status" aria-live="polite">Refresh</span>
       </button>
     </div>
     <div id="gauge"></div>
@@ -368,7 +373,6 @@
   var powerState = document.getElementById("power-state");
   var gaugeEl = document.getElementById("gauge");
   var fluidRefresh = document.getElementById("fluid-refresh");
-  var fluidRefreshLabel = document.getElementById("fluid-refresh-label");
   var manualRefreshing = false;
   var powerCard = document.querySelector(".card--power");
   var bottomState = document.getElementById("bottom-state");
@@ -765,8 +769,8 @@
     var status = document.getElementById("fluid-refresh-status");
     fluidRefresh.disabled = true;
     fluidRefresh.setAttribute("aria-busy", "true");
-    fluidRefreshLabel.textContent = "Refreshing\u2026";
-    status.textContent = "Requesting a fresh sensor reading\u2026";
+    fluidRefresh.setAttribute("aria-label", "Refreshing fluid level");
+    status.textContent = "";
     async function request(path) {
       var res = await fetch(BASE + path + "token=" + encodeURIComponent(TOKEN), {
         cache: "no-store", signal: AbortSignal.timeout(5000)
@@ -792,7 +796,7 @@
           currentV1 = value;
           drawGauge();
           complete = true;
-          status.textContent = "Sensor refreshed at " + new Date().toLocaleTimeString([], { hour12: false });
+          status.textContent = "";
           break;
         }
       }
@@ -809,7 +813,7 @@
     if (manualRefreshing) return;
     fluidRefresh.disabled = false;
     fluidRefresh.removeAttribute("aria-busy");
-    fluidRefreshLabel.textContent = "Refresh";
+    fluidRefresh.setAttribute("aria-label", "Refresh fluid level");
   }
 
   function schedule() {
